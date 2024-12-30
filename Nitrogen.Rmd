@@ -1,0 +1,129 @@
+---
+title: "Nitrogen"
+output:
+  word_document: default
+  pdf_document: default
+date: "2024-12-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(SIBER)
+library(dplyr)
+library(ggplot2)
+library(openxlsx)
+library(RColorBrewer)
+```
+
+```{r importing}
+###creating the cleaned data set
+
+uncleaned <- read.csv("~/Desktop/Catatonk/Nexus Summer 24/FINAL Catatonk.xlsx - Cleaned.csv")
+
+#making for easier manipulation
+uncleaned <- uncleaned%>%
+  mutate(ID = CUMV_Number_Sample.ID, Species = factor(Species), Year = as.numeric(Year), Decade = as.numeric(Decade), d13C = δ13C, d15N = δ15N,.keep = "none")
+
+#creating bins of five years and adding a column denoting the bin for each data point
+breaks <- seq(1930,2025, 5)
+labels <- seq(1930, 2020, 5)
+uncleaned$five_year_group <- cut(uncleaned$Year, breaks = breaks, labels = labels, right = F)
+uncleaned$five_year_group[uncleaned$Year >= 1970 & uncleaned$Year < 1980] <- 1970
+uncleaned$five_year_group <- as.factor(uncleaned$five_year_group)
+```
+
+```{r cleaning}
+#finding outliers
+plot(uncleaned$d15N, main = NA, ylab = expression({delta}^15*N~'permille'))
+hist(uncleaned$d15N, breaks = seq(7,17,0.5), main = NA, xlab = expression({delta}^15*N~'permille')) #the data looks normal enough to use z scores
+z_scores <- scale(uncleaned$d15N)
+outlier_index <- which(abs(z_scores) > 4) #used z score > 4 based on visual elements of the scatter plot
+uncleaned[outlier_index, ] #the outliers -- there is no bias towards any factor
+clean <- uncleaned[-outlier_index, ] #removing outliers from the data
+
+
+```
+
+```{r infrasctructure}
+#a data frame with the average d13C and d15N values for ach species
+all.avg <- clean %>%
+  group_by(Species)%>%
+  summarize(d13C_avg = mean(d13C), d15N_avg = mean(d15N))%>%
+  arrange(d15N_avg)
+
+#a data frame with the average d13C and d15N values for each species per decade
+all.avg.decade <- clean %>%
+  group_by(Species, Decade)%>%
+  summarize(d13C = mean(d13C), d15N = mean(d15N))%>%
+  left_join(all.avg, by = "Species")%>%
+  arrange(Species, Decade)
+
+```
+
+```{r all species}
+colors <- c(brewer.pal(12, "Set3"), brewer.pal(9, "Set1"), brewer.pal(3, "Set2"))
+
+#plotting all species averages for a decade across time
+ggplot(data = all.avg.decade, mapping = aes(Decade, d15N, color = Species))+
+  geom_path(aes(group = interaction(Species)))+
+  scale_color_manual(values = colors, guide = "none") +
+  geom_point()+
+  ylim(min(all.avg.decade$d15N), max(all.avg.decade$d15N))+
+  scale_x_continuous(breaks = seq(1930, 2020, by = 10))+
+  ylab(expression({delta}^15*N~'permille'))+
+  ggtitle(expression("Species average " * delta^15 * N~permille~"Over Time"))
+
+
+```
+
+Nitrogen delta values illuminate trophic level -- isotope ratios become higher as a species climbs the food ladder. This graph can describe the diets of each species in Catatonk Creek.
+
+However there is a lack of separation from one guild to the next. Where we might expect herbivores, omnivores, and carnivores to have distinct delta values, it is much more of a gradient among the species.
+
+```{r gradient}
+#all species average for a decade across time, colored by average delta N for entire interval
+
+ggplot(data = all.avg.decade, mapping =  aes(Decade, d15N, color = d15N_avg))+
+  geom_path(aes(group = interaction(Species)))+
+  geom_point()+
+  scale_color_gradient(low = "blue", high = "pink",name = expression("Timespan " * delta^15 * N~permille~ "Average"))+
+  ylim(min(all.avg.decade$d15N), max(all.avg.decade$d15N))+
+  scale_x_continuous(breaks = seq(1930, 2020, by = 10))+
+  ylab(expression({delta}^15*N~'permille'))+
+  ggtitle(expression("Species average " * delta^15 * N~permille~"Over Time"))
+
+
+```
+This gives us a clearer picture of where the partitions are in trophic level. To my eye, there are three distinct colors in this graph, blue for the herbivore (campostoma anomalum), purple for the omnivores, and pink for the three pure carnivores -- Notorus insignis, Ambloplities rupestris, Micropterus dolomieu
+
+```{r new diet avgs}
+#adding a factor for diet, found using the graph above
+clean <- clean %>% 
+  mutate(new.diet = case_when(
+  Species %in% c("ambloplites rupestris", "micropterus dolomieu","notorus insignis") ~ "carnivore",
+  Species %in% c("campostoma anomalum") ~ "herbivore",
+  TRUE ~ "omnivore"
+  )
+  )
+
+#a data frame with the average d13C and d15N values for each diet guild per decade
+new.diet.avgs <- clean%>%
+  group_by(Decade, new.diet)%>%
+  summarize(d13C = mean(d13C), d15N = mean(d15N))%>%
+  arrange(new.diet, Decade)
+new.diet.avgs <- new.diet.avgs[order(factor(new.diet.avgs$new.diet, levels = c("herbivore", "omnivore", "carnivore"))), ] #ordering the guilds in the data frame
+
+#plotting the average N values in each diet across time
+ggplot(data = new.diet.avgs, mapping =  aes(Decade, d15N, color = new.diet))+
+  geom_path(aes(group = interaction(new.diet)))+
+  geom_point()+
+  ylim(min(all.avg.decade$d15N), max(all.avg.decade$d15N))+
+  scale_x_continuous(breaks = seq(1930, 2020, by = 10))+
+  scale_color_manual(
+    values = c("herbivore" = "blue", "omnivore" = "purple", "carnivore" = "pink"), name = "Diet"
+                     )+
+  ylab(expression({delta}^15*N~'permille'))+
+  ggtitle(expression("Species average " * delta^15 * N~permille~"Over Time"))
+
+```
+Now we can see how the delta nitrogen values varied across each guild. The n values are vastly different, as expected between diet groups.
