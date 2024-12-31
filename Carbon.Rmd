@@ -72,7 +72,6 @@ ggplot(all.avg.decade, aes(Decade, d13C, color = Species))+
   scale_x_continuous(breaks = seq(1930, 2020, by = 10))+
   ylab(expression({delta}^13*C~'permille'))+
   ggtitle(expression("Species Average " * delta^13 * C~permille~"Over Time"))
-
 ```
 
 Here we can see that the delta carbon values are depleting across time. Pollutants entering the stream can explain this change, as they often have more depleted isotope ratios.
