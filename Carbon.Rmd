@@ -61,6 +61,8 @@ all.avg.decade <- clean %>%
 Delta carbon values are influenced by primary producer in a species food chain. With the stream ecosystem species staying relatively consistent across the time period, community wide trends will be explained by outside factors.
 
 ```{r investigating}
+colors <- c(brewer.pal(12, "Set3"), brewer.pal(9, "Set1"), brewer.pal(3, "Set2"))
+
 #plotting average carbon values across time for each species
 ggplot(all.avg.decade, aes(Decade, d13C, color = Species))+
   geom_point()+
