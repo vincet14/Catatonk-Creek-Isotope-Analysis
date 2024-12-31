@@ -1,0 +1,91 @@
+---
+title: "Carbon"
+output: pdf_document
+date: "2024-11-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(SIBER)
+library(dplyr)
+library(ggplot2)
+library(openxlsx)
+library(RColorBrewer)
+```
+
+```{r importing}
+###creating the cleaned data set
+
+uncleaned <- read.csv("~/Desktop/Catatonk/Nexus Summer 24/FINAL Catatonk.xlsx - Cleaned.csv")
+
+#making for easier manipulation
+uncleaned <- uncleaned%>%
+  mutate(ID = CUMV_Number_Sample.ID, Species = factor(Species), Year = as.numeric(Year), Decade = as.numeric(Decade), d13C = δ13C, d15N = δ15N,.keep = "none")
+
+#creating bins of five years and adding a column denoting the bin for each data point
+breaks <- seq(1930,2025, 5)
+labels <- seq(1930, 2020, 5)
+uncleaned$five_year_group <- cut(uncleaned$Year, breaks = breaks, labels = labels, right = F)
+uncleaned$five_year_group[uncleaned$Year >= 1970 & uncleaned$Year < 1980] <- 1970
+uncleaned$five_year_group <- as.factor(uncleaned$five_year_group)
+
+```
+
+```{r cleaning}
+#finding outliers
+plot(uncleaned$d13C, main = NA, ylab = expression({delta}^13*C~'permille'))
+hist(uncleaned$d13C, breaks = seq(-30, -18, 0.5), main = NA, xlab = expression({delta}^13*C~'permille')) #the data looks normal enough to use z scores
+z_scores <- scale(uncleaned$d13C)
+outlier_index <- which(abs(z_scores) > 4) #used z score > 4 based on visual elements of the scatter plot
+uncleaned[outlier_index, ] #the outliers -- there is no bias towards any factor
+clean <- uncleaned[-outlier_index, ] #removing outlier from the data
+
+```
+
+```{r infrasctructure}
+#a data frame with the average d13C and d15N values for ach species
+all.avg <- clean %>%
+  group_by(Species)%>%
+  summarize(d13C_avg = mean(d13C), d15N_avg = mean(d15N))%>%
+  arrange(d15N_avg)
+
+#a data frame with the average d13C and d15N values for each species per decade
+all.avg.decade <- clean %>%
+  group_by(Species, Decade)%>%
+  summarize(d13C = mean(d13C), d15N = mean(d15N))%>%
+  left_join(all.avg, by = "Species")%>%
+  arrange(Species, Decade)
+
+```
+
+Delta carbon values are influenced by primary producer in a species food chain. With the stream ecosystem species staying relatively consistent across the time period, community wide trends will be explained by outside factors.
+
+```{r investigating}
+#plotting average carbon values across time for each species
+ggplot(all.avg.decade, aes(Decade, d13C, color = Species))+
+  geom_point()+
+  geom_path()+
+  scale_color_manual(values = colors, guide = "none")+
+  ylim(min(all.avg.decade$d13C), max(all.avg.decade$d13C))+
+  scale_x_continuous(breaks = seq(1930, 2020, by = 10))+
+  ylab(expression({delta}^13*C~'permille'))+
+  ggtitle(expression("Species Average " * delta^13 * C~permille~"Over Time"))
+
+```
+
+Here we can see that the delta carbon values are depleting across time. Pollutants entering the stream can explain this change, as they often have more depleted isotope ratios.
+
+```{r linear regression}
+#using linear regression to analyze change over time
+lm.carbon = lm(d13C ~ Decade, data = clean)
+summary(lm.carbon)
+
+#seeing if a quadratic fit is more applicable, because there seems to be a stabillization/upward trend since 1980
+quad.carbon = lm(d13C ~ Decade +  I(Decade^2), data = clean)
+summary(quad.carbon)
+
+```
+
+As predicted, the data follow a quadratic fit slightly better than linear (adjusted r-squared value 0.3349 versus 0.2981, respectively). This may be attributed to restrictions on pollutants, such as described in the Clean Water Act of 1972, or agricultural shifts in the land around Catatonk Creek.
+
+
